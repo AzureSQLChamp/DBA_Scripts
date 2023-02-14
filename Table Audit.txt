@@ -1,0 +1,4 @@
+https://www.codeproject.com/Articles/166264/Audits-on-MS-SQL-Server
+
+http://sqltechi.blogspot.com/2016/10/error-message-14420-and-error-message.html
+
