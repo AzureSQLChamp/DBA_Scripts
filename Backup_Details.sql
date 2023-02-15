@@ -1,30 +1,12 @@
--- Get Backup History for required database
-SELECT 
-s.database_name,
-m.physical_device_name,
-CAST(CAST(s.backup_size / 1048576 AS INT) AS VARCHAR(14))  AS bkSizeMB,
-CAST(CAST(s.compressed_backup_size / 1048576 AS INT) AS VARCHAR(14))  AS Compressed_bkSizeMB,
-CAST(DATEDIFF(second, s.backup_start_date,
-s.backup_finish_date) AS VARCHAR(12)) + ' ' + 'Seconds' TimeTaken,
-s.backup_start_date,
-CAST(s.first_lsn AS VARCHAR(50)) AS first_lsn,
-CAST(s.last_lsn AS VARCHAR(50)) AS last_lsn,
-CASE s.[type]
-WHEN 'D' THEN 'Full'
-WHEN 'I' THEN 'Differential'
-WHEN 'L' THEN 'Transaction Log'
-END AS BackupType,
-s.server_name,
-s.recovery_model
-FROM msdb.dbo.backupset s
-INNER JOIN msdb.dbo.backupmediafamily m ON s.media_set_id = m.media_set_id
-WHERE s.backup_start_date>'2017-04-01'  --adjust your date
---Uncomment below lines if you want a one or more type of backup
---AND (s.type='D' OR s.type ='I')
---AND (s.type='L' )
---Uncomment below line if you want to filter by database name
---AND database_name ='security'
-ORDER BY backup_start_date DESC, backup_finish_date
-
-
-
+SELECT ISNULL(d.[name], bs.[database_name]) AS [Database], d.recovery_model_desc AS [Recovery Model], 
+       d.log_reuse_wait_desc AS [Log Reuse Wait Desc],
+    MAX(CASE WHEN [type] = 'D' THEN bs.backup_finish_date ELSE NULL END) AS [Last Full Backup],
+    MAX(CASE WHEN [type] = 'I' THEN bs.backup_finish_date ELSE NULL END) AS [Last Differential Backup],
+    MAX(CASE WHEN [type] = 'L' THEN bs.backup_finish_date ELSE NULL END) AS [Last Log Backup]
+FROM sys.databases AS d WITH (NOLOCK)
+LEFT OUTER JOIN msdb.dbo.backupset AS bs WITH (NOLOCK)
+ON bs.[database_name] = d.[name]
+AND bs.backup_finish_date > GETDATE()- 30
+WHERE d.name <> N'tempdb'
+GROUP BY ISNULL(d.[name], bs.[database_name]), d.recovery_model_desc, d.log_reuse_wait_desc, d.[name]
+ORDER BY d.recovery_model_desc, d.[name];
