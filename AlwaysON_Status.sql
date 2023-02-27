@@ -58,7 +58,7 @@ from state_change_data
 where object_name = 'availability_replica_state_change'
 order by event_timestamp desc;
 
-#Scripts#: Failover AG:
+--#Scripts#: Failover AG:
 ;WITH cte_HADR AS (SELECT object_name, CONVERT(XML, event_data) AS data
 FROM sys.fn_xe_file_target_read_file('AlwaysOn*.xel', null, null, null)
 WHERE object_name = 'error_reported'
@@ -70,7 +70,7 @@ SELECT data.value('(/event/@timestamp)[1]','datetime') AS [timestamp],
 FROM cte_HADR
 order by timestamp desc
 
-https://dba.stackexchange.com/questions/76016/how-to-check-history-of-primary-node-in-an-availability-group
+--https://dba.stackexchange.com/questions/76016/how-to-check-history-of-primary-node-in-an-availability-group*/
 DECLARE @FileName NVARCHAR(4000)
 SELECT @FileName = target_data.value('(EventFileTarget/File/@name)[1]', 'nvarchar(4000)')
     FROM (
@@ -102,5 +102,3 @@ WITH    base
            ,replica_server_name
         FROM base
         ORDER BY event_timestamp DESC;
-
-
