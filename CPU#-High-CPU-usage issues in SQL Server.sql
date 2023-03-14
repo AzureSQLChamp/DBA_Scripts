@@ -89,3 +89,7 @@ SELECT TOP 10 st.text AS batch_text,
 FROM sys.dm_exec_query_stats qs
 CROSS APPLY sys.dm_exec_sql_text(sql_handle) st
 ORDER BY(qs.total_worker_time / qs.execution_count) DESC
+
+Ref:
+https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues
+
