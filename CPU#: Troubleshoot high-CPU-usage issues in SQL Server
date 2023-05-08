@@ -1,0 +1,75 @@
+/*This article provides procedures to diagnose and fix issues that are caused by high CPU usage on a computer that's running Microsoft SQL Server. Although there are many possible causes of high CPU usage that occur in SQL Server, the following ones are the most common causes:
+
+High logical reads that are caused by table or index scans because of the following conditions:
+      Out-of-date statistics
+      Missing indexes
+      Parameter sensitive plan (PSP) issues
+      Poorly designed queries
+Increase in workload
+*/
+
+/* Step 1: Verify that SQL Server is causing high CPU usage */
+
+/* You can use the following PowerShell script to collect the counter data over a 60-second span: */
+
+$serverName = $env:COMPUTERNAME
+$Counters = @(
+    ("\\$serverName" + "\Process(sqlservr*)\% User Time"), ("\\$serverName" + "\Process(sqlservr*)\% Privileged Time")
+)
+Get-Counter -Counter $Counters -MaxSamples 30 | ForEach {
+    $_.CounterSamples | ForEach {
+        [pscustomobject]@{
+            TimeStamp = $_.TimeStamp
+            Path = $_.Path
+            Value = ([Math]::Round($_.CookedValue, 3))
+        }
+        Start-Sleep -s 2
+    }
+}
+
+/* Step 2: Identify queries contributing to CPU usage */
+
+/* If the Sqlservr.exe process is causing high CPU usage, by far, the most common reason is SQL Server queries that perform table or index scans, followed by sort,
+hash operations and loops (nested loop operator or WHILE (T-SQL)). To get an idea of how much CPU the queries are currently using, out of overall CPU capacity, 
+run the following statement: */
+
+DECLARE @init_sum_cpu_time int,
+        @utilizedCpuCount int 
+--get CPU count used by SQL Server
+SELECT @utilizedCpuCount = COUNT( * )
+FROM sys.dm_os_schedulers
+WHERE status = 'VISIBLE ONLINE' 
+--calculate the CPU usage by queries OVER a 5 sec interval 
+SELECT @init_sum_cpu_time = SUM(cpu_time)
+FROM sys.dm_exec_requests WAITFOR DELAY '00:00:05'SELECT CONVERT(DECIMAL(5,
+         2),
+         ((SUM(cpu_time) - @init_sum_cpu_time) / (@utilizedCpuCount * 5000.00)) * 100) AS [CPU FROM Queries AS Percent of Total CPU Capacity]
+FROM sys.dm_exec_requests
+
+/* To identify the queries that are responsible for high-CPU activity currently, run the following statement: */
+
+SELECT TOP 10 s.session_id,
+           r.status,
+           r.cpu_time,
+           r.logical_reads,
+           r.reads,
+           r.writes,
+           r.total_elapsed_time / (1000 * 60) 'Elaps M',
+           SUBSTRING(st.TEXT, (r.statement_start_offset / 2) + 1,
+           ((CASE r.statement_end_offset
+                WHEN -1 THEN DATALENGTH(st.TEXT)
+                ELSE r.statement_end_offset
+            END - r.statement_start_offset) / 2) + 1) AS statement_text,
+           COALESCE(QUOTENAME(DB_NAME(st.dbid)) + N'.' + QUOTENAME(OBJECT_SCHEMA_NAME(st.objectid, st.dbid)) 
+           + N'.' + QUOTENAME(OBJECT_NAME(st.objectid, st.dbid)), '') AS command_text,
+           r.command,
+           s.login_name,
+           s.host_name,
+           s.program_name,
+           s.last_request_end_time,
+           s.login_time,
+           r.open_transaction_count
+FROM sys.dm_exec_sessions AS s
+JOIN sys.dm_exec_requests AS r ON r.session_id = s.session_id CROSS APPLY sys.Dm_exec_sql_text(r.sql_handle) AS st
+WHERE r.session_id != @@SPID
+ORDER BY r.cpu_time DESC
