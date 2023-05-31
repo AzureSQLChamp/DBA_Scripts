@@ -1,6 +1,9 @@
 -- This script will check the execution plan cache for any queries that are non-SARGable.
 -- It does this by finding table and index scans that contain a scalar operators
 -- More info about this script: https://blog.bertwagner.com/how-to-search-and-destroy-non-sargable-queries-on-your-server-ff9f57c7268e
+/*--Note: OK, non-SARGable queries are bad…how do I check if I have any on my server?
+The script below looks at cached query plans and searches them for any table or index scans. Next, it looks for scalar operators, and if it finds any it means we have ourselves a non-SARGable query.
+The fix is then to rewrite the query to be SARGable or add a missing index.*/
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
  
