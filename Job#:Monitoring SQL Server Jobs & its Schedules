@@ -1,0 +1,83 @@
+-- Jobs with a daily schedule
+SELECT
+    sysjobs.name AS job_name,
+    sysjobs.enabled AS job_enabled,
+    sysschedules.name AS schedule_name,
+    sysschedules.freq_recurrence_factor,
+    'Daily' AS frequency,
+    'every ' + CAST(freq_interval AS varchar(3)) + ' day(s)' AS Days,
+    CASE
+        WHEN freq_subday_type = 2 THEN ' every ' + CAST(freq_subday_interval AS varchar(7)) +
+             ' seconds starting at ' + STUFF(STUFF(RIGHT(REPLICATE('0', 6) + CAST(active_start_time AS varchar(6)), 6), 3, 0, ':'), 6, 0, ':')
+        WHEN freq_subday_type = 4 THEN ' every ' + CAST(freq_subday_interval AS varchar(7)) +
+             ' minutes starting at ' + STUFF(STUFF(RIGHT(REPLICATE('0', 6) + CAST(active_start_time AS varchar(6)), 6), 3, 0, ':'), 6, 0, ':')
+        WHEN freq_subday_type = 8 THEN ' every ' + CAST(freq_subday_interval AS varchar(7)) +
+             ' hours starting at ' + STUFF(STUFF(RIGHT(REPLICATE('0', 6) + CAST(active_start_time AS varchar(6)), 6), 3, 0, ':'), 6, 0, ':')
+        ELSE ' starting at ' + STUFF(STUFF(RIGHT(REPLICATE('0', 6) + CAST(active_start_time AS varchar(6)), 6), 3, 0, ':'), 6, 0, ':')
+    END AS time,
+    last_execution.last_execution_datetime AS last_execution_datetime
+FROM
+    msdb.dbo.sysjobs
+    INNER JOIN msdb.dbo.sysjobschedules ON sysjobs.job_id = sysjobschedules.job_id
+    INNER JOIN msdb.dbo.sysschedules ON sysjobschedules.schedule_id = sysschedules.schedule_id
+    LEFT JOIN (
+        SELECT
+            job_id,
+            MAX(CONVERT(BIGINT, run_date) * 1000000 + CONVERT(BIGINT, run_time)) AS last_execution_datetime
+        FROM
+            msdb.dbo.sysjobhistory
+        WHERE
+            step_id = 0 -- Considering only the last overall job execution
+        GROUP BY
+            job_id
+    ) AS last_execution ON sysjobs.job_id = last_execution.job_id
+WHERE
+    freq_type = 4
+
+UNION
+
+-- Jobs with a weekly schedule
+SELECT
+    sysjobs.name AS job_name,
+    sysjobs.enabled AS job_enabled,
+    sysschedules.name AS schedule_name,
+    sysschedules.freq_recurrence_factor,
+    'Weekly' AS frequency,
+    REPLACE(
+        CASE WHEN freq_interval & 1 = 1 THEN 'Sunday, ' ELSE '' END +
+        CASE WHEN freq_interval & 2 = 2 THEN 'Monday, ' ELSE '' END +
+        CASE WHEN freq_interval & 4 = 4 THEN 'Tuesday, ' ELSE '' END +
+        CASE WHEN freq_interval & 8 = 8 THEN 'Wednesday, ' ELSE '' END +
+        CASE WHEN freq_interval & 16 = 16 THEN 'Thursday, ' ELSE '' END +
+        CASE WHEN freq_interval & 32 = 32 THEN 'Friday, ' ELSE '' END +
+        CASE WHEN freq_interval & 64 = 64 THEN 'Saturday, ' ELSE '' END
+    , ', ', '') AS Days,
+    CASE
+        WHEN freq_subday_type = 2 THEN ' every ' + CAST(freq_subday_interval AS varchar(7)) +
+             ' seconds starting at ' + STUFF(STUFF(RIGHT(REPLICATE('0', 6) + CAST(active_start_time AS varchar(6)), 6), 3, 0, ':'), 6, 0, ':')
+        WHEN freq_subday_type = 4 THEN ' every ' + CAST(freq_subday_interval AS varchar(7)) +
+             ' minutes starting at ' + STUFF(STUFF(RIGHT(REPLICATE('0', 6) + CAST(active_start_time AS varchar(6)), 6), 3, 0, ':'), 6, 0, ':')
+        WHEN freq_subday_type = 8 THEN ' every ' + CAST(freq_subday_interval AS varchar(7)) +
+             ' hours starting at ' + STUFF(STUFF(RIGHT(REPLICATE('0', 6) + CAST(active_start_time AS varchar(6)), 6), 3, 0, ':'), 6, 0, ':')
+        ELSE ' starting at ' + STUFF(STUFF(RIGHT(REPLICATE('0', 6) + CAST(active_start_time AS varchar(6)), 6), 3, 0, ':'), 6, 0, ':')
+    END AS time,
+    last_execution.last_execution_datetime AS last_execution_datetime
+FROM
+    msdb.dbo.sysjobs
+    INNER JOIN msdb.dbo.sysjobschedules ON sysjobs.job_id = sysjobschedules.job_id
+    INNER JOIN msdb.dbo.sysschedules ON sysjobschedules.schedule_id = sysschedules.schedule_id
+    LEFT JOIN (
+        SELECT
+            job_id,
+            MAX(CONVERT(BIGINT, run_date) * 1000000 + CONVERT(BIGINT, run_time)) AS last_execution_datetime
+        FROM
+            msdb.dbo.sysjobhistory
+        WHERE
+            step_id = 0 -- Considering only the last overall job execution
+        GROUP BY
+            job_id
+    ) AS last_execution ON sysjobs.job_id = last_execution.job_id
+WHERE
+    freq_type = 8
+ORDER BY
+    job_enabled DESC;
