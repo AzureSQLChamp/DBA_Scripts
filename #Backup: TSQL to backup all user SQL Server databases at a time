@@ -1,0 +1,78 @@
+DECLARE @DatabaseName sysname
+DECLARE @BackupPath nvarchar(500)
+DECLARE @SQL nvarchar(max)
+
+-- Set the backup path
+SET @BackupPath = 'C:\SQL_DATA\Backup\' -- Replace with your desired backup path
+
+-- Create a cursor to loop through all user databases
+DECLARE db_cursor CURSOR FOR
+SELECT name
+FROM sys.databases
+WHERE database_id > 4 -- Exclude system databases
+
+OPEN db_cursor
+
+FETCH NEXT FROM db_cursor INTO @DatabaseName
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Generate the dynamic SQL statement for each database
+    DECLARE @BackupFileName nvarchar(500)
+    SET @BackupFileName = @BackupPath + @DatabaseName + '_' + REPLACE(CONVERT(nvarchar(16), GETDATE(), 120), ':', '_') + '.bak'
+    SET @SQL = 'BACKUP DATABASE ' + QUOTENAME(@DatabaseName) + ' TO DISK = ''' + @BackupFileName + ''' WITH COMPRESSION'
+
+    -- Execute the backup command
+    EXEC sp_executesql @SQL
+
+    FETCH NEXT FROM db_cursor INTO @DatabaseName
+END
+
+CLOSE db_cursor
+DEALLOCATE db_cursor
+
+--T-Log Backup:
+
+-- Specify the backup location
+DECLARE @BackupLocation NVARCHAR(500) = 'C:\SQL_DATA\Backup\';
+
+-- Temporary variables
+DECLARE @DBName NVARCHAR(128);
+DECLARE @SQL NVARCHAR(MAX);
+DECLARE @BackupFileName NVARCHAR(500);
+
+-- Cursor to iterate through user databases
+DECLARE BackupCursor CURSOR FOR
+    SELECT name
+    FROM sys.databases
+    WHERE database_id > 4 AND state = 0; -- Exclude system databases and offline databases
+
+-- Open the cursor
+OPEN BackupCursor;
+
+-- Fetch the first database name
+FETCH NEXT FROM BackupCursor INTO @DBName;
+
+-- Iterate through each database
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Build the backup file name
+    SET @BackupFileName = @BackupLocation + @DBName + '_' +
+                          REPLACE(CONVERT(NVARCHAR(10), GETDATE(), 120), '-', '_') + '_' +
+                          REPLACE(CONVERT(NVARCHAR(8), GETDATE(), 108), ':', '') + '.trn';
+
+    -- Build the backup command
+    SET @SQL = 'BACKUP LOG ' + QUOTENAME(@DBName) + ' TO DISK = N''' + @BackupFileName + ''' ' +
+               'WITH COMPRESSION, INIT, STATS = 10, FORMAT, ' +
+               'NAME = N''' + @DBName + ' - Transaction Log Backup'';';
+
+    -- Execute the backup command
+    EXEC sp_executesql @SQL;
+
+    -- Fetch the next database name
+    FETCH NEXT FROM BackupCursor INTO @DBName;
+END
+
+-- Close the cursor
+CLOSE BackupCursor;
+DEALLOCATE BackupCursor;
