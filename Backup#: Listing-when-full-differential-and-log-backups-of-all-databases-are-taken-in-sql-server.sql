@@ -28,3 +28,70 @@ LEFT OUTER JOIN msdb..backupset d
 WHERE s.name <> 'tempdb'
 ORDER BY s.name
 
+
+	
+
+--Databases with data backup over 24 hours old 
+SELECT 
+   CONVERT(CHAR(100), SERVERPROPERTY('Servername')) AS Server, 
+   msdb.dbo.backupset.database_name, 
+   MAX(msdb.dbo.backupset.backup_finish_date) AS last_db_backup_date, 
+   DATEDIFF(hh, MAX(msdb.dbo.backupset.backup_finish_date), GETDATE()) AS [Backup Age (Hours)] 
+FROM 
+   msdb.dbo.backupset 
+WHERE 
+   msdb.dbo.backupset.type = 'L'  
+GROUP BY 
+   msdb.dbo.backupset.database_name 
+HAVING 
+   (MAX(msdb.dbo.backupset.backup_finish_date) < DATEADD(hh, - 24, GETDATE()))  
+
+UNION  
+
+--Databases without any backup history 
+SELECT      
+   CONVERT(CHAR(100), SERVERPROPERTY('Servername')) AS Server,  
+   master.sys.sysdatabases.NAME AS database_name,  
+   NULL AS [Last Data Backup Date],  
+   9999 AS [Backup Age (Hours)]  
+FROM 
+   master.sys.sysdatabases 
+   LEFT JOIN msdb.dbo.backupset ON master.sys.sysdatabases.name = msdb.dbo.backupset.database_name 
+WHERE 
+   msdb.dbo.backupset.database_name IS NULL 
+   AND master.sys.sysdatabases.name <> 'tempdb' 
+ORDER BY  
+   msdb.dbo.backupset.database_name
+
+
+
+SELECT 
+CONVERT(CHAR(100), SERVERPROPERTY('Servername')) AS Server,
+msdb.dbo.backupset.database_name, 
+msdb.dbo.backupset.backup_start_date, 
+msdb.dbo.backupset.backup_finish_date,
+msdb.dbo.backupset.expiration_date,
+msdb.dbo.backupset.user_name,
+msdb.dbo.backupset.checkpoint_lsn,
+msdb.dbo.backupset.is_copy_only,
+CAST( msdb.dbo.backupset.first_lsn AS VARCHAR(50)) AS first_lsn
+,CAST(msdb.dbo.backupset.last_lsn AS VARCHAR(50)) AS last_lsn,
+CASE msdb..backupset.type 
+WHEN 'D' THEN 'Database' 
+WHEN 'L' THEN 'Log' 
+when 'I' THEN 'Differential database '
+END AS backup_type, 
+msdb.dbo.backupset.backup_size, 
+convert(decimal(18, 2), msdb.dbo.backupset.backup_size / 1024 / 1024 / 1024) as BackupSizeGB,
+msdb.dbo.backupmediafamily.logical_device_name, 
+msdb.dbo.backupmediafamily.physical_device_name, 
+msdb.dbo.backupset.name AS backupset_name,
+msdb.dbo.backupset.is_copy_only,
+msdb.dbo.backupset.description
+FROM msdb.dbo.backupmediafamily 
+INNER JOIN msdb.dbo.backupset ON msdb.dbo.backupmediafamily.media_set_id = msdb.dbo.backupset.media_set_id 
+WHERE (CONVERT(datetime, msdb.dbo.backupset.backup_start_date, 102) >= GETDATE() - 1) 
+--AND msdb.dbo.backupset.database_name = '<DBNAME>'
+AND msdb..backupset.type ='L'
+ORDER BY 
+msdb.dbo.backupset.backup_finish_date DESC
