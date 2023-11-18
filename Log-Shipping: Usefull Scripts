@@ -1,0 +1,90 @@
+-- Primary Log Shipping Monitor Report
+SELECT 'log_shipping_monitor for the Primary'
+EXEC sp_help_log_shipping_monitor
+-- Errors on the Primary
+SELECT 'Log Shipping Errors on the Primary'
+SELECT CASE agent_type WHEN 1 THEN 'Backup' WHEN 2 THEN 'Copy' WHEN 3 THEN 'Restore' END as agent_type, * 
+from msdb..log_shipping_monitor_error_detail
+
+-- Secondary Log Shipping Monitor Report
+SELECT 'log_shipping_monitor for the Secondary'
+EXEC [LSSECONDARYSRV].master.dbo.sp_help_log_shipping_monitor
+-- Errors on the Secondary
+SELECT 'Log Shipping Errors on the Secondary'
+SELECT CASE agent_type WHEN 1 THEN 'Backup' WHEN 2 THEN 'Copy' WHEN 3 THEN 'Restore' END as agent_type, * 
+from [LSSECONDARYSRV].msdb.dbo.log_shipping_monitor_error_detail
+
+-- Primary info
+SELECT 'Primary Log Shipping Info'
+SELECT mp.primary_server , pd.primary_database, pd.backup_directory, pd.backup_share, pd.last_backup_date, pd.last_backup_file, mp.backup_threshold, mp.threshold_alert_enabled, mp.threshold_alert,
+pd.monitor_server ,ps.secondary_server, ps.secondary_database, mp.history_retention_period
+FROM msdb.dbo.log_shipping_primary_databases pd
+JOIN msdb.dbo.log_shipping_primary_secondaries ps ON pd.primary_id = ps.primary_id
+JOIN msdb.dbo.log_shipping_monitor_primary mp ON mp.primary_id = pd.primary_id
+
+-- Secondary info
+SELECT 'Secondary Log Shipping Info'
+SELECT ms.primary_server, ms.primary_database ,ms.secondary_server, ms.secondary_database, s.backup_source_directory, s.backup_destination_directory, s.file_retention_period AS backup_file_retention_period,
+s.last_copied_file, s.last_copied_date, sd.last_restored_file, sd.last_restored_date, ms.restore_threshold, ms.last_restored_latency,
+sd.restore_delay, sd.restore_all, sd.restore_mode, sd.disconnect_users
+FROM [LSSECONDARYSRV].msdb.dbo.log_shipping_secondary_databases sd
+JOIN [LSSECONDARYSRV].msdb.dbo.log_shipping_secondary s ON sd.secondary_id = s.secondary_id
+JOIN [LSSECONDARYSRV].msdb.dbo.log_shipping_monitor_secondary ms ON ms.secondary_id = sd.secondary_id
+
+--How To Check How Far Behind Your SQL Server Log Shipping Secondary Is
+;WITH LastRestores AS
+(
+SELECT
+    [d].[name] [Database],
+    bmf.physical_device_name [LastFileRestored],
+    bs.backup_start_date LastFileRestoredCreatedTime,
+    r.restore_date [DateRestored],        
+    RowNum = ROW_NUMBER() OVER (PARTITION BY d.Name ORDER BY r.[restore_date] DESC)
+FROM master.sys.databases d
+    INNER JOIN msdb.dbo.[restorehistory] r ON r.[destination_database_name] = d.Name
+    INNER JOIN msdb..backupset bs ON [r].[backup_set_id] = [bs].[backup_set_id]
+    INNER JOIN msdb..backupmediafamily bmf ON [bs].[media_set_id] = [bmf].[media_set_id] 
+)
+SELECT 
+     CASE WHEN DATEDIFF(MINUTE,LastFileRestoredCreatedTime,GETDATE()) > @HighRPOWarning THEN 'RPO High Warning!'
+        WHEN DATEDIFF(MINUTE,LastFileRestoredCreatedTime,GETDATE()) > @MediumRPOWarning THEN 'RPO Medium Warning!'
+        WHEN DATEDIFF(MINUTE,LastFileRestoredCreatedTime,GETDATE()) > @LowRPOWarning THEN 'RPO Low Warning!'
+        ELSE 'RPO Good'
+     END [Status],
+    [Database],
+    [LastFileRestored],
+    [LastFileRestoredCreatedTime],
+    [DateRestored]
+FROM [LastRestores]
+WHERE [RowNum] = 1
+
+--SQL Server Log shipping Error list
+SELECT CASE agent_type WHEN 1 THEN 'Backup' WHEN 2 THEN 'Copy' WHEN 3 THEN 'Restore' END as agent_type, * 
+from msdb..log_shipping_monitor_error_detail
+
+--Log shipping LSN mismatch issue The log in this backup set begins at LSN , which is too recent to apply to the database
+DECLARE @db_name VARCHAR(100)
+SELECT @db_name = 'LSDemo'
+-- query
+SELECT TOP (30) s.database_name
+,m.physical_device_name
+,CAST(CAST(s.backup_size / 1000000 AS INT) AS VARCHAR(14)) + ' ' + 'MB' AS bkSize
+,CAST(DATEDIFF(second, s.backup_start_date, s.backup_finish_date) AS VARCHAR(4)) + ' ' + 'Seconds' TimeTaken
+,s.backup_start_date
+,CAST(s.first_lsn AS VARCHAR(50)) AS first_lsn
+,CAST(s.last_lsn AS VARCHAR(50)) AS last_lsn
+,CASE s.[type] WHEN 'D'
+THEN 'Full'
+WHEN 'I'
+THEN 'Differential'
+WHEN 'L'
+THEN 'Transaction Log'
+END AS BackupType
+,s.server_name
+,s.recovery_model
+FROM msdb.dbo.backupset s
+INNER JOIN msdb.dbo.backupmediafamily m ON s.media_set_id = m.media_set_id
+WHERE s.database_name = @db_name
+ORDER BY backup_start_date DESC
+,backup_finish_date
+
