@@ -95,3 +95,10 @@ WHERE (CONVERT(datetime, msdb.dbo.backupset.backup_start_date, 102) >= GETDATE()
 AND msdb..backupset.type ='L'
 ORDER BY 
 msdb.dbo.backupset.backup_finish_date DESC
+
+--Size of the log backups
+select A.database_name,A.backup_start_date,
+A.backup_finish_date,A.type,B.physical_device_name--((A.backup_size)/(1024*1024*1024)) as backup_size_GB,((A.compressed_backup_size)/(1024*1024*1024)) as Comp_Size_GB
+from msdb..backupset A, msdb..backupmediafamily B
+where A.media_set_id = B.media_set_id and a.type='L'
+order by A.backup_finish_date desc
