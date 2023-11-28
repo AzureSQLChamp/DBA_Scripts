@@ -10,21 +10,21 @@ LEFT OUTER JOIN msdb..backupset b
 				MAX(backup_start_date) AS 'Full DB Backup'
 			FROM msdb..backupset
 			WHERE database_name = b.database_name
-			AND TYPE = 'D') -- full database backups only, not log backups
+			AND b.TYPE = 'D') -- full database backups only, not log backups
 LEFT OUTER JOIN msdb..backupset c
 	ON s.name = c.database_name
 		AND c.backup_start_date = (SELECT
 				MAX(backup_start_date) 'Differential Backup'
 			FROM msdb..backupset
 			WHERE database_name = c.database_name
-			AND TYPE = 'I')
+			AND b.TYPE = 'I')
 LEFT OUTER JOIN msdb..backupset d
 	ON s.name = d.database_name
 		AND d.backup_start_date = (SELECT
 				MAX(backup_start_date) 'Log Backup'
 			FROM msdb..backupset
 			WHERE database_name = d.database_name
-			AND TYPE = 'L')
+			AND b.TYPE = 'L')
 WHERE s.name <> 'tempdb'
 ORDER BY s.name
 
