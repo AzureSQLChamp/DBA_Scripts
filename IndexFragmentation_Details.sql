@@ -35,3 +35,24 @@ WHERE
     i.index_id > 0
     AND i.object_id > 0;
 
+--sp_helpdb
+
+DECLARE @dbid int = 5
+ 
+SELECT  dbschemas.[name] as 'Schema',
+        dbtables.[name] as 'Table',
+        dbindexes.[name] as 'Index',
+        indexstats.avg_fragmentation_in_percent,
+        indexstats.page_count,
+        indexstats.forwarded_record_count,
+        CASE WHEN indexstats.page_count <= 1000 OR indexstats.avg_fragmentation_in_percent < 10 THEN '--Do nothing. It''s good'
+             WHEN indexstats.avg_fragmentation_in_percent BETWEEN 10 AND 40 THEN 'ALTER INDEX '+dbindexes.[name]+' ON '+dbschemas.[name]+'.'+dbtables.[name]+' REORGANIZE;'
+             ELSE 'ALTER INDEX '+dbindexes.[name]+' ON '+dbschemas.[name]+'.'+dbtables.[name]+' REBUILD;'
+        END
+FROM    sys.dm_db_index_physical_stats (@dbid, NULL, NULL, NULL, NULL) AS indexstats
+JOIN    sys.tables dbtables ON dbtables.[object_id] = indexstats.[object_id]
+JOIN    sys.schemas dbschemas ON dbtables.[schema_id] = dbschemas.[schema_id]
+JOIN    sys.indexes AS dbindexes ON dbindexes.[object_id] = indexstats.[object_id] AND indexstats.index_id = dbindexes.index_id
+WHERE   indexstats.database_id = @dbid
+ORDER BY indexstats.avg_fragmentation_in_percent DESC
+
