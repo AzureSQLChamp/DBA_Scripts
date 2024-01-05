@@ -61,3 +61,20 @@ WHERE
     SP.major_id = EP.endpoint_id
 ORDER BY
     PERMISSION, GRANTOR, GRANTEE;
+GO
+USE [msdb]
+GO
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode = msdb.dbo.sp_add_job @job_name=N'Run sp_server_diagnostics',
+@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+/****** Object: Step [Run SP_SERVER_DIAGNOSTICS] Script Date: 2/15/2023 4:20:41 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Run SP_SERVER_DIAGNOSTICS',
+@subsystem=N'TSQL',
+@command=N'sp_server_diagnostics 5',
+@database_name=N'master',
+@output_file_name=N'C:\AAG-Backup\sp_server_diagnostics_output.out',
+@flags=2
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+EXEC sp_start_job 'Run sp_server_diagnostics'
