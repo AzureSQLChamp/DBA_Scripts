@@ -3,6 +3,7 @@
 
 DBCC LOGINFO(<DatabaseName>)
 
+--SQL SERVER – Query to List Active and Inactive VLF
 SELECT [name], s.database_id,
 COUNT(l.database_id) AS ‘VLF Count’,
 SUM(vlf_size_mb) AS ‘VLF Size (MB)’,
