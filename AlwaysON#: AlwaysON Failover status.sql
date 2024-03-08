@@ -1,3 +1,16 @@
+--exec sp_cycle_errorlog
+GO
+sp_readerrorlog 0,1,'The state of the local availability replica','AAG1'
+GO
+--Query to find out if any failover happened in the last 30 minutes
+create table #errormsg(duration datetime,errornum int,dbmessage varchar(max))
+DECLARE @tags3 VARCHAR(5000)SET @tags3  = (SELECT CAST( t.target_data AS XML ).value('(EventFileTarget/File/@name)[1]', 'VARCHAR(MAX)') FROM sys.dm_xe_sessions s INNER JOIN sys.dm_xe_session_targets t ON s.address = t.event_session_address WHERE t.target_name = 'event_file' and s.name='AlwaysOn_health'); 
+IF @tags3 is Not NULL begin WITH cte_HADR AS (SELECT object_name, CONVERT(XML, event_data) AS data FROM sys.fn_xe_file_target_read_file(@tags3, null, null, null)WHERE object_name = 'error_reported')
+insert into #errormsg SELECT  data.value('(/event/@timestamp)[1]','datetime')AS [timestamp],data.value('(/event/data[@name=''error_number''])[1]','int') AS [error_number],data.value('(/event/data[@name=''message''])[1]','varchar(max)') AS [message] FROM cte_HADR WHERE data.value('(/event/data[@name=''error_number''])[1]','int') = 1480 select  distinct GETDATE() as currenttime, er.duration,dbs.name  from #errormsg er  inner join sys.databases dbs on er.dbmessage LIKE '%"' +dbs.name+'"%'  where er.duration>=(DATEADD(mi,-30,GETDATE()) );
+drop table #errormsg;end 
+else IF OBJECT_ID(N'TempDB.dbo.#errormsg', N'U') IS NOT NULL drop table #errormsg;
+GO
+
 --#Script#: How to Get WSFC Name Using T-SQL
 select * from master.sys.dm_hadr_cluster;
 Go
