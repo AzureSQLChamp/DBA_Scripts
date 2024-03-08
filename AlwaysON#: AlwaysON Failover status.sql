@@ -2,6 +2,8 @@
 GO
 sp_readerrorlog 0,1,'The state of the local availability replica','AAG1'
 GO
+--Powershell Script
+    Get-winEvent -ComputerName ListnerName -filterHashTable @{logname ='Microsoft-Windows-FailoverClustering/Operational'; id=1641}| ft -AutoSize -Wrap 
 --Query to find out if any failover happened in the last 30 minutes
 create table #errormsg(duration datetime,errornum int,dbmessage varchar(max))
 DECLARE @tags3 VARCHAR(5000)SET @tags3  = (SELECT CAST( t.target_data AS XML ).value('(EventFileTarget/File/@name)[1]', 'VARCHAR(MAX)') FROM sys.dm_xe_sessions s INNER JOIN sys.dm_xe_session_targets t ON s.address = t.event_session_address WHERE t.target_name = 'event_file' and s.name='AlwaysOn_health'); 
