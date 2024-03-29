@@ -1,6 +1,6 @@
 -- Database users login script
 
-Database Users login script generation
+--Database Users login script generation
 
 */
 
