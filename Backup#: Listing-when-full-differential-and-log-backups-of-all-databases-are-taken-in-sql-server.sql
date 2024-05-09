@@ -92,7 +92,7 @@ FROM msdb.dbo.backupmediafamily
 INNER JOIN msdb.dbo.backupset ON msdb.dbo.backupmediafamily.media_set_id = msdb.dbo.backupset.media_set_id 
 WHERE (CONVERT(datetime, msdb.dbo.backupset.backup_start_date, 102) >= GETDATE() - 1) 
 --AND msdb.dbo.backupset.database_name = '<DBNAME>'
-AND msdb..backupset.type ='L'
+AND msdb..backupset.type IN ('D','I','L')
 ORDER BY 
 msdb.dbo.backupset.backup_finish_date DESC
 
