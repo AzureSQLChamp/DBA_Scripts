@@ -41,6 +41,11 @@ SELECT DISTINCT
 	ORDER BY 1,2,3 
 END
 
+
+--Change Replication Administrative (distributor_admin) login password
+USE master;
+EXEC sp_changedistributor_password @password;
+
 ===========================
 SELECT 
   msp.publication AS PublicationName,
