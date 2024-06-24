@@ -15,17 +15,17 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
 
 IF EXISTS (SELECT 1 FROM master..sysdatabases WHERE name = 'Distribution')
 BEGIN
-	-- Get the publication name based on article 
-	SELECT DISTINCT  
-		 p.publication								AS Publication_Name
-		,srv.srvname								AS Publication_Server  
-		,a.publisher_db								AS Publication_Database
-		,a.article									AS Publication_Table_Name
-		,ss.srvname									AS Subscription_Server  
-		,s.subscriber_db							AS Subscription_Database
-		,a.destination_object 						AS Subscription_Table_Name
-		,da.subscriber_login				 		AS Subscription_Login
-		,da.name							 		AS Distribution_Agent_Job_Name
+-- Get the publication name based on article 
+SELECT DISTINCT  
+	p.publication							AS Publication_Name
+	,srv.srvname							AS Publication_Server  
+	,a.publisher_db							AS Publication_Database
+	,a.article							AS Publication_Table_Name
+	,ss.srvname							AS Subscription_Server  
+	,s.subscriber_db						AS Subscription_Database
+	,a.destination_object 						AS Subscription_Table_Name
+	,da.subscriber_login				 		AS Subscription_Login
+	,da.name							AS Distribution_Agent_Job_Name
 	FROM Distribution..MSArticles a  
 	JOIN Distribution..MSpublications p 
 		ON a.publication_id = p.publication_id 
