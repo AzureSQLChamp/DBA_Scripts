@@ -130,3 +130,6 @@ $out = "ERR_" + $file.BaseName + ".txt"
 select-string -path $file.FullName -Pattern " ERR " -AllMatches | out-file "$dir\$out" 
 }
 
+
+Test-NetConnection -ComputerName "batch42prod" -Port 1433
+
