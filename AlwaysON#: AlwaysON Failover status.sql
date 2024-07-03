@@ -117,3 +117,16 @@ WITH    base
            ,replica_server_name
         FROM base
         ORDER BY event_timestamp DESC;
+
+--Get cluster Log
+
+Get-ClusterLog -UseLocalTime -TimeSpan 10 -Node node1 -Destination C:\Windows\Cluster\Reports
+
+Troubleshoot:
+$dir = "C:\Users\saadmin.NA\Desktop\Cluster-T" 
+$files = Get-ChildItem $dir -Recurse -Include "*.log" 
+foreach ($file in $files){ 
+$out = "ERR_" + $file.BaseName + ".txt" 
+select-string -path $file.FullName -Pattern " ERR " -AllMatches | out-file "$dir\$out" 
+}
+
