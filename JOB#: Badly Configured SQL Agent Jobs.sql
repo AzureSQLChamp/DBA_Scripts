@@ -1,7 +1,6 @@
 /*
 =================================================================================
 Description: This script finds SQL Agent jobs that are suspiciously misconfigured
-Author: Eitan Blumin | https://www.madeiradata.com
 Date: 2022-04-28
 Last Update: 2022-04-28
 =================================================================================
