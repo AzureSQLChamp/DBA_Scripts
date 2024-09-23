@@ -100,6 +100,14 @@ select log_reuse_wait_desc,Name from sys.databases where name ='TEMPDB'
 --#Scripts: Job Name
 select * from msdb.dbo.sysjobs where job_id=0x940DD56AC2A3F04BBD3EDA097F9AB919
 
+--#Scripts: SQL Server Current memory usage
+select
+      physical_memory_in_use_kb/1048576.0 AS 'physical_memory_in_use (GB)',
+      locked_page_allocations_kb/1048576.0 AS 'locked_page_allocations (GB)',
+      virtual_address_space_committed_kb/1048576.0 AS 'virtual_address_space_committed (GB)',
+      available_commit_limit_kb/1048576.0 AS 'available_commit_limit (GB)',
+      page_fault_count as 'page_fault_count'
+from  sys.dm_os_process_memory;
 
 --#Scripts#: Performance Counters:
 SELECT object_name, counter_name, cntr_value FROM sys.dm_os_performance_counters 
