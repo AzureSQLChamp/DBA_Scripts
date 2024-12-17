@@ -1,0 +1,59 @@
+set nocount on
+create table #Sync_Logins (Script varchar(max))
+Declare @sql nvarchar(max)
+Declare @Primary_Replica varchar(20)
+
+SELECT @Primary_Replica = primary_replica
+FROM sys.dm_hadr_availability_group_states a INNER JOIN sys.availability_group_listeners b
+ON a.group_id=b.group_id where b.dns_name='JBSAPP' -- Change the Listener Name 
+
+IF (@Primary_Replica= @@servername) BEGIN;
+Print N'Script cannot run on primary Replica';
+drop table #Sync_Logins
+RETURN;
+END;
+
+SET @sql=N'';
+set @sql = 'SELECT ''If not Exists (select loginname from master.dbo.syslogins where name = '''''' +name +'''''''+') BEGIN CREATE LOGIN '' + QUOTENAME(name) + '' WITH PASSWORD=''
+sys.fn_varbintohexstr(password_hash) + '' HASHED, SID=''
+sys.fn_varbintohexstr(sid) + '', ''
+''DEFAULT_DATABASE=''+ QUOTENAME(COALESCE(default_database_name, ''master''))
+'', DEFAULT_LANGUAGE='' + QUOTENAME(COALESCE(default_language_name,
+''us_english''))
+'', CHECK_EXPIRATION='' + CASE is_expiration_checked WHEN 1 THEN ''ON'' ELSE
+''OFF'' END
+'', CHECK_POLICY='' + CASE is_policy_checked WHEN 1 THEN ''ON'' ELSE ''OFF'' END + '' END''
+FROM ['+@Primary_Replica+'].master.sys.sql_logins
+WHERE name !=''sa''
+UNION ALL
+--Windows logins:
+SELECT ''If not Exists (select loginname from master.dbo.syslogins where name = ''''''+ name +'''''''+') BEGIN CREATE LOGIN '' + QUOTENAME(name) + '' FROM WINDOWS WITH ''
+''DEFAULT_DATABASE=''+ QUOTENAME(COALESCE(default_database_name, ''master''))
+'', DEFAULT_LANGUAGE='' + QUOTENAME(COALESCE(default_language_name,
+''us_english''))+ '' END''
+FROM ['+@Primary_Replica+'].master.sys.server_principals
+WHERE type IN (''U'',''G'')
+AND name NOT LIKE ''%\SQLServer2005MSSQLUser$%$%''
+AND name NOT LIKE ''%\SQLServer2005SQLAgentUser$%$%''
+AND name NOT LIKE ''%\SQLServer2005MSFTEUser$%$%''
+AND name NOT IN (''BUILTIN\Administrators'', ''NT AUTHORITY\SYSTEM'');'
+insert into #Sync_Logins
+execute sp_executesql @sql
+SET @sql=N'';
+SET @sql = 'SELECT ''EXEC sp_addsrvrolemember '' + QUOTENAME(L.name) + '', '' +
+QUOTENAME(R.name)
+FROM ['+@Primary_Replica+'].master.sys.server_principals L JOIN ['+@Primary_Replica+'].master.sys.server_role_members RM
+ON L.principal_id=RM.member_principal_id
+JOIN ['+@Primary_Replica+'].master.sys.server_principals R
+ON RM.role_principal_id=R.principal_id
+WHERE L.type IN (''U'',''G'',''S'')
+AND L.name NOT LIKE ''%\SQLServer2005MSSQLUser$%$%''
+AND L.name NOT LIKE ''%\SQLServer2005SQLAgentUser$%$%''
+AND L.name NOT LIKE ''%\SQLServer2005MSFTEUser$%$%''
+AND L.name NOT IN (''BUILTIN\Administrators'', ''NT AUTHORITY\SYSTEM'', ''sa'');'
+insert into #Sync_Logins
+execute sp_executesql @sql
+SET @sql=N'';
+SELECT @sql=@sql+' '+[Script] FROM #Sync_Logins;
+EXECUTE master.sys.sp_executesql @sql;
+drop table #Sync_Logins
