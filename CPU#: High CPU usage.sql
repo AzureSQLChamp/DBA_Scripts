@@ -125,3 +125,6 @@ Logman.exe start PerfLog-Short
 
 To finish:
 Logman.exe stop PerfLog-Short
+
+
+https://udayarumilli.com/sql-script-monitor-cpu-utilization-2/
