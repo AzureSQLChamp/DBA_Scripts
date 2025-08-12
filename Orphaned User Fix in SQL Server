@@ -1,0 +1,5 @@
+-- Script to find orphaned users
+EXEC sp_change_users_login 'Report';
+
+-- Script to fix orphaned users
+EXEC sp_change_users_login 'Auto_Fix', 'username', NULL, 'password';
