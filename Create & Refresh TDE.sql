@@ -1,3 +1,32 @@
+-- Create a master key in the master database
+USE master;
+GO
+CREATE DATABASE ENCRYPTION KEY;
+GO
+
+-- Create a certificate for encryption
+CREATE CERTIFICATE TDECert
+    WITH SUBJECT = 'TDE Certificate';
+GO
+
+-- Back up the certificate to a file (important for recovery)
+BACKUP CERTIFICATE TDECert
+    TO FILE = 'C:\Backup\TDECert.cer'
+    WITH PRIVATE KEY (
+        FILE = 'C:\Backup\TDECertPrivateKey.pvk',
+        ENCRYPTION BY PASSWORD = 'StrongPassword123'
+    );
+GO
+
+-- Enable TDE on the target database
+USE YourDatabase;
+GO
+ALTER DATABASE YourDatabase
+    SET ENCRYPTION ON;
+GO
+--=====================================================
+
+
 --When required to perform a refreshon a database that is protected by Tranparent Data Encryption (TDE),  it is important have the certifcates are sync between source and destination server. This article describe how to sync the certifcates prior to perform the move. The prefered method is to use the DBAM TDE tool, a link to this document is at the bottom of this article.
 --1.	view the database TDE cerificate with this script, and identify the certifcate that you need.
 
