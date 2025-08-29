@@ -1,0 +1,44 @@
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+IF OBJECT_ID('distribution.dbo.MSreplservers', 'U') IS NOT NULL
+
+BEGIN
+    SELECT DISTINCT
+        p.publication AS Publication_Name,
+        COALESCE(pub_srv.srvname, srv_p.srvname) AS Publication_Server,
+        a.publisher_db AS Publication_Database,
+        a.article AS Publication_Table_Name,
+        COALESCE(sub_srv.srvname, srv_s.srvname) AS Subscription_Server,
+        s.subscriber_db AS Subscription_Database,
+        a.destination_object AS Subscription_Table_Name
+
+    FROM distribution.dbo.MSArticles a
+    JOIN distribution.dbo.MSpublications p ON a.publication_id = p.publication_id
+    JOIN distribution.dbo.MSsubscriptions s ON p.publication_id = s.publication_id
+    LEFT JOIN distribution.dbo.MSreplservers pub_srv ON pub_srv.srvid = p.publisher_id
+    LEFT JOIN distribution.dbo.MSreplservers sub_srv ON sub_srv.srvid = s.subscriber_id
+    LEFT JOIN master.dbo.sysservers srv_p ON srv_p.srvid = p.publisher_id
+    LEFT JOIN master.dbo.sysservers srv_s ON srv_s.srvid = s.subscriber_id
+    WHERE COALESCE(sub_srv.srvname, srv_s.srvname, '') NOT IN ('anonymous', 'virtual', '')
+      AND s.subscriber_db IS NOT NULL;
+
+END
+
+ELSE
+
+BEGIN
+    SELECT DISTINCT
+        p.publication AS Publication_Name,
+        srv_p.srvname AS Publication_Server,
+        a.publisher_db AS Publication_Database,
+        a.article AS Publication_Table_Name,
+        srv_s.srvname AS Subscription_Server,
+        s.subscriber_db AS Subscription_Database,
+        a.destination_object AS Subscription_Table_Name
+    FROM distribution.dbo.MSArticles a
+    JOIN distribution.dbo.MSpublications p ON a.publication_id = p.publication_id
+    JOIN distribution.dbo.MSsubscriptions s ON p.publication_id = s.publication_id
+    LEFT JOIN master.dbo.sysservers srv_p ON srv_p.srvid = p.publisher_id
+    LEFT JOIN master.dbo.sysservers srv_s ON srv_s.srvid = s.subscriber_id
+    WHERE COALESCE(srv_s.srvname, '') NOT IN ('anonymous', 'virtual', '')
+      AND s.subscriber_db IS NOT NULL;
+END
