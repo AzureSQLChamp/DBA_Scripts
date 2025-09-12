@@ -42,3 +42,333 @@ BEGIN
     WHERE COALESCE(srv_s.srvname, '') NOT IN ('anonymous', 'virtual', '')
       AND s.subscriber_db IS NOT NULL;
 END
+
+=============================================================================================================
+--Replication details with row count, difference and timestamp
+SET NOCOUNT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+DECLARE
+    @FilterPublicationName SYSNAME = NULL,
+    @FilterSubscriberServer SYSNAME = NULL,
+    @FilterPublisherServer SYSNAME = NULL,
+    @FilterPublicationDatabase SYSNAME = NULL,
+    @FilterSubscriberDatabase SYSNAME = NULL,
+    @FilterArticle SYSNAME = NULL;
+DECLARE @replication_articles TABLE (
+    Publication_Name SYSNAME NOT NULL,
+    Publication_Server SYSNAME NULL,
+    Publication_Database SYSNAME NOT NULL,
+    Publication_Table_Name SYSNAME NOT NULL,
+    Subscription_Server SYSNAME NULL,
+    Subscription_Database SYSNAME NOT NULL,
+    Subscription_Table_Name SYSNAME NOT NULL
+);
+IF OBJECT_ID('distribution_db.dbo.MSreplservers', 'U') IS NOT NULL
+BEGIN
+    -- SQL Server with MSreplservers
+    INSERT INTO @replication_articles
+    SELECT DISTINCT
+        p.publication,
+        COALESCE(pub_srv.srvname, srv_p.srvname),
+        a.publisher_db,
+        a.article,
+        COALESCE(sub_srv.srvname, srv_s.srvname),
+        s.subscriber_db,
+        a.destination_object
+    FROM distribution_db.dbo.MSArticles a
+    JOIN distribution_db.dbo.MSpublications p ON a.publication_id = p.publication_id
+    JOIN distribution_db.dbo.MSsubscriptions s ON p.publication_id = s.publication_id
+    LEFT JOIN distribution_db.dbo.MSreplservers pub_srv ON pub_srv.srvid = p.publisher_id
+    LEFT JOIN distribution_db.dbo.MSreplservers sub_srv ON sub_srv.srvid = s.subscriber_id
+    LEFT JOIN master.dbo.sysservers srv_p ON srv_p.srvid = p.publisher_id
+    LEFT JOIN master.dbo.sysservers srv_s ON srv_s.srvid = s.subscriber_id
+    WHERE COALESCE(sub_srv.srvname, srv_s.srvname, '') NOT IN ('anonymous','virtual','')
+      AND COALESCE(pub_srv.srvname, srv_p.srvname, '') NOT IN ('','anonymous','virtual')
+      AND s.subscriber_db IS NOT NULL
+      AND (@FilterPublicationName IS NULL OR p.publication = @FilterPublicationName)
+      AND (@FilterPublisherServer IS NULL OR COALESCE(pub_srv.srvname, srv_p.srvname) = @FilterPublisherServer)
+      AND (@FilterSubscriberServer IS NULL OR COALESCE(sub_srv.srvname, srv_s.srvname) = @FilterSubscriberServer)
+      AND (@FilterPublicationDatabase IS NULL OR a.publisher_db = @FilterPublicationDatabase)
+      AND (@FilterSubscriberDatabase IS NULL OR s.subscriber_db = @FilterSubscriberDatabase)
+      AND (@FilterArticle IS NULL OR a.article = @FilterArticle);
+END
+
+DECLARE
+    @PubName SYSNAME,
+    @PubServer SYSNAME,
+    @PubDB SYSNAME,
+    @PubTable SYSNAME,
+    @SubServer SYSNAME,
+    @SubDB SYSNAME,
+    @SubTable SYSNAME,
+    @CountError NVARCHAR(4000),
+    @PubRowCount BIGINT,
+    @SubRowCount BIGINT,
+    @RowDiff BIGINT,
+    @Pub_IsLocal BIT,
+    @Sub_IsLocal BIT,
+    @Pub_Linked_Server SYSNAME,
+    @Sub_Linked_Server SYSNAME,
+    @sql NVARCHAR(MAX),
+    @cnt BIGINT;
+DECLARE @results TABLE (
+    Publication SYSNAME,
+    Publication_Server SYSNAME,
+    Publication_Database SYSNAME,
+    Publication_Table SYSNAME,
+    Publisher_RowCount BIGINT,
+    Subscription_Server SYSNAME,
+    Subscription_Database SYSNAME,
+    Subscription_Table SYSNAME,
+    Subscriber_RowCount BIGINT,
+    Row_Count_Difference BIGINT,
+    Count_Error NVARCHAR(4000),
+    Run_Timestamp DATETIME
+);
+DECLARE article_cursor CURSOR FOR
+SELECT * FROM @replication_articles
+ORDER BY Publication_Name, Publication_Table_Name;
+OPEN article_cursor;
+FETCH NEXT FROM article_cursor INTO
+    @PubName, @PubServer, @PubDB, @PubTable,
+    @SubServer, @SubDB, @SubTable;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @CountError = NULL;
+    SET @PubRowCount = NULL;
+    SET @SubRowCount = NULL;
+    SET @RowDiff = NULL;
+    SET @cnt = NULL;
+    SET @Pub_IsLocal = CASE WHEN @PubServer IS NULL OR @PubServer = @@SERVERNAME THEN 1 ELSE 0 END;
+    SET @Pub_Linked_Server = CASE WHEN @Pub_IsLocal = 0 THEN QUOTENAME(@PubServer) ELSE NULL END;
+    SET @Sub_IsLocal = CASE WHEN @SubServer IS NULL OR @SubServer = @@SERVERNAME THEN 1 ELSE 0 END;
+    SET @Sub_Linked_Server = CASE WHEN @Sub_IsLocal = 0 THEN QUOTENAME(@SubServer) ELSE NULL END;
+    BEGIN TRY
+        SET @sql = N'
+            SELECT @cnt_OUT = SUM(p.rows)
+            FROM ' + CASE WHEN @Pub_IsLocal = 1 THEN QUOTENAME(@PubDB) ELSE @Pub_Linked_Server + '.' + QUOTENAME(@PubDB) END + N'.sys.partitions p
+            JOIN ' + CASE WHEN @Pub_IsLocal = 1 THEN QUOTENAME(@PubDB) ELSE @Pub_Linked_Server + '.' + QUOTENAME(@PubDB) END + N'.sys.tables t ON p.object_id = t.object_id
+            WHERE t.name = @tbl AND p.index_id IN (0,1)';
+        EXEC sp_executesql @sql, N'@tbl SYSNAME, @cnt_OUT BIGINT OUTPUT', @tbl = @PubTable, @cnt_OUT = @cnt OUTPUT;
+        SET @PubRowCount = @cnt;
+    END TRY
+    BEGIN CATCH
+        SET @CountError = 'Publisher: ' + ERROR_MESSAGE();
+    END CATCH;
+    SET @cnt = NULL;
+    BEGIN TRY
+        SET @sql = N'
+            SELECT @cnt_OUT = SUM(p.rows)
+            FROM ' + CASE WHEN @Sub_IsLocal = 1 THEN QUOTENAME(@SubDB) ELSE @Sub_Linked_Server + '.' + QUOTENAME(@SubDB) END + N'.sys.partitions p
+            JOIN ' + CASE WHEN @Sub_IsLocal = 1 THEN QUOTENAME(@SubDB) ELSE @Sub_Linked_Server + '.' + QUOTENAME(@SubDB) END + N'.sys.tables t ON p.object_id = t.object_id
+            WHERE t.name = @tbl AND p.index_id IN (0,1)';
+        EXEC sp_executesql @sql, N'@tbl SYSNAME, @cnt_OUT BIGINT OUTPUT', @tbl = @SubTable, @cnt_OUT = @cnt OUTPUT;
+        SET @SubRowCount = @cnt;
+    END TRY
+    BEGIN CATCH
+        SET @CountError = ISNULL(@CountError + ' | ', '') + 'Subscriber: ' + ERROR_MESSAGE();
+    END CATCH;
+    IF @PubRowCount IS NOT NULL AND @SubRowCount IS NOT NULL
+        SET @RowDiff = @PubRowCount - @SubRowCount;
+    INSERT INTO @results (
+        Publication, Publication_Server, Publication_Database, Publication_Table,
+        Publisher_RowCount, Subscription_Server, Subscription_Database, Subscription_Table,
+        Subscriber_RowCount, Row_Count_Difference, Count_Error, Run_Timestamp
+    )
+    VALUES (
+        @PubName, @PubServer, @PubDB, @PubTable,
+        @PubRowCount, @SubServer, @SubDB, @SubTable,
+        @SubRowCount, @RowDiff, @CountError, GETDATE()
+    );
+    FETCH NEXT FROM article_cursor INTO
+        @PubName, @PubServer, @PubDB, @PubTable,
+        @SubServer, @SubDB, @SubTable;
+END
+CLOSE article_cursor;
+DEALLOCATE article_cursor;
+SELECT * FROM @results
+ORDER BY Row_Count_Difference DESC
+
+
+==================================================================
+--Replication details with row count, size of table_MB, count difference and timestamp
+ 
+SET NOCOUNT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+ 
+DECLARE
+    @FilterPublicationName SYSNAME = NULL,
+    @FilterSubscriberServer SYSNAME = NULL,
+    @FilterPublisherServer SYSNAME = NULL,
+    @FilterPublicationDatabase SYSNAME = NULL,
+    @FilterSubscriberDatabase SYSNAME = NULL,
+    @FilterArticle SYSNAME = NULL;
+ 
+DECLARE @replication_articles TABLE (
+    Publication_Name SYSNAME NOT NULL,
+    Publication_Server SYSNAME NULL,
+    Publication_Database SYSNAME NOT NULL,
+    Publication_Table_Name SYSNAME NOT NULL,
+    Subscription_Server SYSNAME NULL,
+    Subscription_Database SYSNAME NOT NULL,
+    Subscription_Table_Name SYSNAME NOT NULL
+);
+ 
+IF OBJECT_ID('distribution_db.dbo.MSreplservers', 'U') IS NOT NULL
+BEGIN
+    INSERT INTO @replication_articles
+    SELECT DISTINCT
+        p.publication,
+        COALESCE(pub_srv.srvname, srv_p.srvname),
+        a.publisher_db,
+        a.article,
+        COALESCE(sub_srv.srvname, srv_s.srvname),
+        s.subscriber_db,
+        a.destination_object
+    FROM distribution_db.dbo.MSArticles a
+    JOIN distribution_db.dbo.MSpublications p ON a.publication_id = p.publication_id
+    JOIN distribution_db.dbo.MSsubscriptions s ON p.publication_id = s.publication_id
+    LEFT JOIN distribution_db.dbo.MSreplservers pub_srv ON pub_srv.srvid = p.publisher_id
+    LEFT JOIN distribution_db.dbo.MSreplservers sub_srv ON sub_srv.srvid = s.subscriber_id
+    LEFT JOIN master.dbo.sysservers srv_p ON srv_p.srvid = p.publisher_id
+    LEFT JOIN master.dbo.sysservers srv_s ON srv_s.srvid = s.subscriber_id
+    WHERE COALESCE(sub_srv.srvname, srv_s.srvname, '') NOT IN ('anonymous','virtual','')
+      AND COALESCE(pub_srv.srvname, srv_p.srvname, '') NOT IN ('','anonymous','virtual')
+      AND s.subscriber_db IS NOT NULL
+      AND (@FilterPublicationName IS NULL OR p.publication = @FilterPublicationName)
+      AND (@FilterPublisherServer IS NULL OR COALESCE(pub_srv.srvname, srv_p.srvname) = @FilterPublisherServer)
+      AND (@FilterSubscriberServer IS NULL OR COALESCE(sub_srv.srvname, srv_s.srvname) = @FilterSubscriberServer)
+      AND (@FilterPublicationDatabase IS NULL OR a.publisher_db = @FilterPublicationDatabase)
+      AND (@FilterSubscriberDatabase IS NULL OR s.subscriber_db = @FilterSubscriberDatabase)
+      AND (@FilterArticle IS NULL OR a.article = @FilterArticle);
+END
+ 
+DECLARE
+    @PubName SYSNAME, @PubServer SYSNAME, @PubDB SYSNAME, @PubTable SYSNAME,
+    @SubServer SYSNAME, @SubDB SYSNAME, @SubTable SYSNAME,
+    @CountError NVARCHAR(4000),
+    @PubRowCount BIGINT, @SubRowCount BIGINT, @RowDiff BIGINT,
+    @Pub_IsLocal BIT, @Pub_Linked_Server SYSNAME,
+    @Sub_IsLocal BIT, @Sub_Linked_Server SYSNAME,
+    @sql NVARCHAR(MAX), @cnt BIGINT, @tableName SYSNAME,
+    @PubSizeMB DECIMAL(18,2), @SubSizeMB DECIMAL(18,2);
+ 
+DECLARE @results TABLE (
+    Publication SYSNAME,
+    Publication_Server SYSNAME NULL,
+    Publication_Database SYSNAME,
+    Publication_Table SYSNAME,
+    Publisher_RowCount BIGINT,
+    Publisher_TableSize_MB DECIMAL(18,2),
+    Subscription_Server SYSNAME NULL,
+    Subscription_Database SYSNAME,
+    Subscription_Table SYSNAME,
+    Subscriber_RowCount BIGINT,
+    Subscriber_TableSize_MB DECIMAL(18,2),
+    Row_Count_Difference BIGINT,
+    Count_Error NVARCHAR(4000),
+    Execution_Timestamp DATETIME2
+);
+ 
+DECLARE article_cursor CURSOR FOR
+SELECT * FROM @replication_articles
+ORDER BY Publication_Name, Publication_Table_Name;
+ 
+OPEN article_cursor;
+FETCH NEXT FROM article_cursor INTO
+    @PubName, @PubServer, @PubDB, @PubTable,
+    @SubServer, @SubDB, @SubTable;
+ 
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @CountError = NULL; SET @PubRowCount = NULL; SET @SubRowCount = NULL; SET @RowDiff = NULL; SET @cnt = NULL;
+    SET @PubSizeMB = NULL; SET @SubSizeMB = NULL;
+ 
+    SET @tableName = @PubTable;
+ 
+    IF @PubServer IS NULL OR @PubServer = @@SERVERNAME BEGIN SET @Pub_IsLocal = 1; SET @Pub_Linked_Server = NULL; END
+    ELSE BEGIN SET @Pub_IsLocal = 0; SET @Pub_Linked_Server = QUOTENAME(@PubServer); END;
+    IF @SubServer IS NULL OR @SubServer = @@SERVERNAME BEGIN SET @Sub_IsLocal = 1; SET @Sub_Linked_Server = NULL; END
+    ELSE BEGIN SET @Sub_IsLocal = 0; SET @Sub_Linked_Server = QUOTENAME(@SubServer); END;
+ 
+    BEGIN TRY
+        SET @sql = N'
+            SELECT @cnt_OUT = SUM(p.rows)
+            FROM ' + CASE WHEN @Pub_IsLocal=1 THEN QUOTENAME(@PubDB) ELSE @Pub_Linked_Server + '.' + QUOTENAME(@PubDB) END + N'.sys.partitions p
+            JOIN ' + CASE WHEN @Pub_IsLocal=1 THEN QUOTENAME(@PubDB) ELSE @Pub_Linked_Server + '.' + QUOTENAME(@PubDB) END + N'.sys.tables t ON p.object_id = t.object_id
+            WHERE t.name = @tbl AND p.index_id IN (0,1)';
+        EXEC sp_executesql @sql, N'@tbl SYSNAME, @cnt_OUT BIGINT OUTPUT', @tbl=@PubTable, @cnt_OUT=@PubRowCount OUTPUT;
+    END TRY
+    BEGIN CATCH
+        SET @CountError = 'Publisher: ' + ERROR_MESSAGE();
+    END CATCH;
+ 
+    BEGIN TRY
+        SET @sql = N'
+            SELECT @size_OUT = SUM(p.used_page_count + p.reserved_page_count) * 8.0 / 1024
+            FROM ' + CASE WHEN @Pub_IsLocal=1 THEN QUOTENAME(@PubDB) ELSE @Pub_Linked_Server + '.' + QUOTENAME(@PubDB) END +
+                    N'.sys.dm_db_partition_stats p
+            JOIN ' + CASE WHEN @Pub_IsLocal=1 THEN QUOTENAME(@PubDB) ELSE @Pub_Linked_Server + '.' + QUOTENAME(@PubDB) END +
+                    N'.sys.tables t ON p.object_id = t.object_id
+            WHERE t.name = @tbl';
+        EXEC sp_executesql @sql, N'@tbl SYSNAME, @size_OUT DECIMAL(18,2) OUTPUT', @tbl=@PubTable, @size_OUT=@PubSizeMB OUTPUT;
+    END TRY
+    BEGIN CATCH
+        SET @CountError = ISNULL(@CountError + ' | ', '') + 'Publisher Size: ' + ERROR_MESSAGE();
+    END CATCH;
+ 
+    BEGIN TRY
+        SET @sql = N'
+            SELECT @cnt_OUT = SUM(p.rows)
+            FROM ' + CASE WHEN @Sub_IsLocal=1 THEN QUOTENAME(@SubDB) ELSE @Sub_Linked_Server + '.' + QUOTENAME(@SubDB) END + N'.sys.partitions p
+            JOIN ' + CASE WHEN @Sub_IsLocal=1 THEN QUOTENAME(@SubDB) ELSE @Sub_Linked_Server + '.' + QUOTENAME(@SubDB) END + N'.sys.tables t ON p.object_id = t.object_id
+            WHERE t.name = @tbl AND p.index_id IN (0,1)';
+        EXEC sp_executesql @sql, N'@tbl SYSNAME, @cnt_OUT BIGINT OUTPUT', @tbl=@SubTable, @cnt_OUT=@SubRowCount OUTPUT;
+    END TRY
+    BEGIN CATCH
+        SET @CountError = ISNULL(@CountError + ' | ', '') + 'Subscriber: ' + ERROR_MESSAGE();
+    END CATCH;
+ 
+    BEGIN TRY
+        SET @sql = N'
+            SELECT @size_OUT = SUM(p.used_page_count + p.reserved_page_count) * 8.0 / 1024
+            FROM ' + CASE WHEN @Sub_IsLocal=1 THEN QUOTENAME(@SubDB) ELSE @Sub_Linked_Server + '.' + QUOTENAME(@SubDB) END +
+                    N'.sys.dm_db_partition_stats p
+            JOIN ' + CASE WHEN @Sub_IsLocal=1 THEN QUOTENAME(@SubDB) ELSE @Sub_Linked_Server + '.' + QUOTENAME(@SubDB) END +
+                    N'.sys.tables t ON p.object_id = t.object_id
+            WHERE t.name = @tbl';
+        EXEC sp_executesql @sql, N'@tbl SYSNAME, @size_OUT DECIMAL(18,2) OUTPUT', @tbl=@SubTable, @size_OUT=@SubSizeMB OUTPUT;
+    END TRY
+    BEGIN CATCH
+        SET @CountError = ISNULL(@CountError + ' | ', '') + 'Subscriber Size: ' + ERROR_MESSAGE();
+    END CATCH;
+ 
+    IF @PubRowCount IS NOT NULL AND @SubRowCount IS NOT NULL
+        SET @RowDiff = @PubRowCount - @SubRowCount;
+ 
+    INSERT INTO @results (
+        Publication, Publication_Server, Publication_Database, Publication_Table,
+        Publisher_RowCount, Publisher_TableSize_MB,
+        Subscription_Server, Subscription_Database, Subscription_Table,
+        Subscriber_RowCount, Subscriber_TableSize_MB,
+        Row_Count_Difference, Count_Error, Execution_Timestamp
+    )
+    VALUES (
+        @PubName, @PubServer, @PubDB, @PubTable,
+        @PubRowCount, @PubSizeMB,
+        @SubServer, @SubDB, @SubTable,
+        @SubRowCount, @SubSizeMB,
+        @RowDiff, @CountError, SYSDATETIME()
+    );
+ 
+    FETCH NEXT FROM article_cursor INTO
+        @PubName, @PubServer, @PubDB, @PubTable,
+        @SubServer, @SubDB, @SubTable;
+END
+ 
+CLOSE article_cursor;
+DEALLOCATE article_cursor;
+ 
+SELECT * FROM @results
+ORDER BY Publication, Publication_Table;
+
