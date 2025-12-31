@@ -167,14 +167,24 @@ WHERE publication = N'PUB_DB1-SUB_DB2';
 
 -SELECT 'sales.stores', COUNT(*) FROM sales.stores;
 
+================================================================================
+
+
 --ADD ARTICLES TO EXSTING REPLICATION
-
-
--- STEP 1 – Check current publication properties
+-- STEP 1 – Check current publication properties on the publisher DB	
 EXEC sp_helppublication @publication = N'PUB_DB1-SUB_DB2';
 GO
 
--- Disable allow_anonymous and immediate_sync to allow schema changes
+	OR
+--on distributor
+SELECT 
+    publication,
+    allow_anonymous,
+    immediate_sync
+FROM distribution.dbo.MSpublications
+WHERE publication = N'PUB_DB1-SUB_DB2';
+
+-- Disable allow_anonymous and immediate_sync on publisherDB
 EXEC sp_changepublication
 @publication = N'PUB_DB1-SUB_DB2',
 @property = N'allow_anonymous',
@@ -283,7 +293,7 @@ GO
 -- Final verification of publication settings
 EXEC sp_helppublication @publication = N'PUB_DB1-SUB_DB2';
 GO
-
+==========================================================================
 	
 --Replication details
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED 
