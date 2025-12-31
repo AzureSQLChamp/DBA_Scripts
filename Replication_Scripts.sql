@@ -10,6 +10,19 @@ select name, is_published, is_subscribed, is_distributor
   from sys.databases
   where is_published = 1 or is_subscribed = 1 or is_distributor = 1
 
+--to verify seubscriber on distributor
+	SELECT  
+    p.publisher_db,
+    p.publication,
+    srv.srvname     AS subscriber_server,
+    s.subscriber_db
+FROM distribution.dbo.MSpublications p
+JOIN distribution.dbo.MSsubscriptions s
+    ON p.publication_id = s.publication_id
+JOIN master.dbo.sysservers srv
+    ON s.subscriber_id = srv.srvid
+ORDER BY subscriber_server, subscriber_db;
+
 
 /*REPLICATION SETUP
 PASSWORD: All replication agent passwords set to 'Admin@12345' */
