@@ -1,0 +1,119 @@
+1. Flow Control Wait Statistics
+-- Check flow control waits on the primary replica  
+SELECT   
+    wait_type,  
+    waiting_tasks_count,  
+    wait_time_ms,  
+    max_wait_time_ms,  
+    signal_wait_time_ms,  
+    wait_time_ms - signal_wait_time_ms AS resource_wait_time_ms  
+FROM sys.dm_os_wait_stats  
+WHERE wait_type LIKE 'HADR_FLOW_CONTROL%'  
+ORDER BY wait_time_ms DESC;  
+
+2. Flow Control Rate and Status
+-- Monitor flow control rate per database replica  
+SELECT   
+    ar.replica_server_name,  
+    db_name(drs.database_id) AS database_name,  
+    drs.is_primary_replica,  
+    drs.log_send_queue_size,  
+    drs.log_send_rate,  
+    drs.redo_queue_size,  
+    drs.redo_rate,  
+    drs.low_water_mark_for_ghosts,  
+    drs.secondary_lag_seconds  
+FROM sys.dm_hadr_database_replica_states drs  
+INNER JOIN sys.availability_replicas ar   
+    ON drs.replica_id = ar.replica_id  
+ORDER BY ar.replica_server_name, database_name;  
+
+3. Detailed Flow Control Metrics
+-- Get comprehensive flow control information  
+SELECT   
+    ar.replica_server_name,  
+    db_name(drs.database_id) AS database_name,  
+    drs.synchronization_state_desc,  
+    drs.synchronization_health_desc,  
+    drs.log_send_queue_size AS log_send_queue_kb,  
+    drs.log_send_rate AS log_send_rate_kb_per_sec,  
+    CASE   
+        WHEN drs.log_send_rate > 0   
+        THEN drs.log_send_queue_size / drs.log_send_rate   
+        ELSE NULL   
+    END AS estimated_send_time_seconds,  
+    drs.redo_queue_size AS redo_queue_kb,  
+    drs.redo_rate AS redo_rate_kb_per_sec,  
+    CASE   
+        WHEN drs.redo_rate > 0   
+        THEN drs.redo_queue_size / drs.redo_rate   
+        ELSE NULL   
+    END AS estimated_redo_time_seconds  
+FROM sys.dm_hadr_database_replica_states drs  
+INNER JOIN sys.availability_replicas ar   
+    ON drs.replica_id = ar.replica_id  
+WHERE drs.is_local = 1;  
+
+4. Performance Counters for Flow Control
+-- Query performance counters related to flow control  
+SELECT   
+    object_name,  
+    counter_name,  
+    instance_name,  
+    cntr_value,  
+    cntr_type  
+FROM sys.dm_os_performance_counters  
+WHERE object_name LIKE '%Availability Replica%'  
+    AND (counter_name LIKE '%Flow Control%'   
+         OR counter_name LIKE '%Log Send Queue%'  
+         OR counter_name LIKE '%Recovery Queue%'  
+         OR counter_name LIKE '%Bytes Sent to Replica%'  
+         OR counter_name LIKE '%Bytes Sent to Transport%')  
+ORDER BY object_name, counter_name, instance_name;  
+
+5. Flow Control Time per Database
+-- Monitor flow control time  
+SELECT   
+    object_name,  
+    counter_name,  
+    instance_name,  
+    cntr_value AS flow_control_time_ms  
+FROM sys.dm_os_performance_counters  
+WHERE object_name LIKE '%Database Replica%'  
+    AND counter_name = 'Flow Control Time (ms/sec)'  
+ORDER BY cntr_value DESC;  
+
+6. Historical Flow Control Analysis
+-- Create a monitoring snapshot (run periodically and store results)  
+SELECT   
+    GETDATE() AS collection_time,  
+    ar.replica_server_name,  
+    db_name(drs.database_id) AS database_name,  
+    drs.log_send_queue_size,  
+    drs.log_send_rate,  
+    drs.redo_queue_size,  
+    drs.redo_rate,  
+    ws.wait_time_ms AS flow_control_wait_ms  
+FROM sys.dm_hadr_database_replica_states drs  
+INNER JOIN sys.availability_replicas ar   
+    ON drs.replica_id = ar.replica_id  
+LEFT JOIN (  
+    SELECT wait_time_ms   
+    FROM sys.dm_os_wait_stats   
+    WHERE wait_type = 'HADR_FLOW_CONTROL'  
+) ws ON 1=1;  
+
+Key Metrics to Monitor:
+log_send_queue_size: Amount of log records not yet sent to secondary replicas (KB)
+log_send_rate: Rate at which log is being sent (KB/sec)
+redo_queue_size: Amount of log waiting to be redone on secondary (KB)
+redo_rate: Rate at which redo is occurring on secondary (KB/sec)
+HADR_FLOW_CONTROL waits: Indicates flow control is actively throttling the primary
+Setting Up Alerts:
+You should set up alerts when:
+
+Flow control waits exceed acceptable thresholds
+Log send queue grows continuously
+Redo queue grows continuously
+Secondary lag exceeds your RPO requirements
+These queries should be run on the primary replica for most comprehensive results, though some can be run on secondary replicas to get their local perspective.
