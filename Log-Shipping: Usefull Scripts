@@ -27,9 +27,9 @@ SELECT 'Secondary Log Shipping Info'
 SELECT ms.primary_server, ms.primary_database ,ms.secondary_server, ms.secondary_database, s.backup_source_directory, s.backup_destination_directory, s.file_retention_period AS backup_file_retention_period,
 s.last_copied_file, s.last_copied_date, sd.last_restored_file, sd.last_restored_date, ms.restore_threshold, ms.last_restored_latency,
 sd.restore_delay, sd.restore_all, sd.restore_mode, sd.disconnect_users
-FROM [LSSECONDARYSRV].msdb.dbo.log_shipping_secondary_databases sd
-JOIN [LSSECONDARYSRV].msdb.dbo.log_shipping_secondary s ON sd.secondary_id = s.secondary_id
-JOIN [LSSECONDARYSRV].msdb.dbo.log_shipping_monitor_secondary ms ON ms.secondary_id = sd.secondary_id
+FROM   msdb.dbo.log_shipping_secondary_databases sd
+JOIN   msdb.dbo.log_shipping_secondary s ON sd.secondary_id = s.secondary_id
+JOIN   msdb.dbo.log_shipping_monitor_secondary ms ON ms.secondary_id = sd.secondary_id
 
 --How To Check How Far Behind Your SQL Server Log Shipping Secondary Is
 ;WITH LastRestores AS
