@@ -63,7 +63,7 @@ DECLARE @replication_articles TABLE (
     Subscription_Database SYSNAME NOT NULL,
     Subscription_Table_Name SYSNAME NOT NULL
 );
-IF OBJECT_ID('distribution_db.dbo.MSreplservers', 'U') IS NOT NULL
+IF OBJECT_ID('distribution.dbo.MSreplservers', 'U') IS NOT NULL
 BEGIN
     -- SQL Server with MSreplservers
     INSERT INTO @replication_articles
@@ -75,11 +75,11 @@ BEGIN
         COALESCE(sub_srv.srvname, srv_s.srvname),
         s.subscriber_db,
         a.destination_object
-    FROM distribution_db.dbo.MSArticles a
-    JOIN distribution_db.dbo.MSpublications p ON a.publication_id = p.publication_id
-    JOIN distribution_db.dbo.MSsubscriptions s ON p.publication_id = s.publication_id
-    LEFT JOIN distribution_db.dbo.MSreplservers pub_srv ON pub_srv.srvid = p.publisher_id
-    LEFT JOIN distribution_db.dbo.MSreplservers sub_srv ON sub_srv.srvid = s.subscriber_id
+    FROM distribution.dbo.MSArticles a
+    JOIN distribution.dbo.MSpublications p ON a.publication_id = p.publication_id
+    JOIN distribution.dbo.MSsubscriptions s ON p.publication_id = s.publication_id
+    LEFT JOIN distribution.dbo.MSreplservers pub_srv ON pub_srv.srvid = p.publisher_id
+    LEFT JOIN distribution.dbo.MSreplservers sub_srv ON sub_srv.srvid = s.subscriber_id
     LEFT JOIN master.dbo.sysservers srv_p ON srv_p.srvid = p.publisher_id
     LEFT JOIN master.dbo.sysservers srv_s ON srv_s.srvid = s.subscriber_id
     WHERE COALESCE(sub_srv.srvname, srv_s.srvname, '') NOT IN ('anonymous','virtual','')
@@ -188,6 +188,7 @@ CLOSE article_cursor;
 DEALLOCATE article_cursor;
 SELECT * FROM @results
 ORDER BY Row_Count_Difference DESC
+
 
 
 ==================================================================
